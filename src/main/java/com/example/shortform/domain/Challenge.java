@@ -1,23 +1,16 @@
 package com.example.shortform.domain;
 
-import com.example.shortform.dto.RequestDto.CategoryRequestDto;
-import com.example.shortform.dto.RequestDto.ChallengeRequestDto;
-import com.example.shortform.repository.CategoryRepository;
+import com.example.shortform.dto.request.ChallengeRequestDto;
 import lombok.*;
-import org.springframework.web.multipart.MultipartFile;
 
 import com.example.shortform.dto.request.ChallengeModifyRequestDto;
 import com.example.shortform.dto.resonse.ChallengeIdResponseDto;
-import com.example.shortform.dto.resonse.ChallengeResponseDto;
-import com.example.shortform.dto.resonse.MemberResponseDto;
-import com.example.shortform.dto.resonse.TagNameResponseDto;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 import javax.persistence.*;
-import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -105,13 +98,13 @@ public class Challenge extends Timestamped{
     }
 
     @Setter
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
     private User user;
 
 
     @Setter
-    @OneToOne(orphanRemoval = true)
+    @OneToOne(fetch = FetchType.LAZY, orphanRemoval = true)
     @JoinColumn(name = "chat_room_id")
     private ChatRoom chatRoom;
 

@@ -3,7 +3,7 @@ package com.example.shortform.service;
 import com.example.shortform.domain.Challenge;
 import com.example.shortform.domain.ImageFile;
 import com.example.shortform.domain.Post;
-import com.example.shortform.dto.RequestDto.ImageFileRequestDto;
+import com.example.shortform.dto.request.ImageFileRequestDto;
 import com.example.shortform.exception.FileUploadException;
 import com.example.shortform.repository.ImageFileRepository;
 import com.example.shortform.util.S3Uploader;
@@ -43,17 +43,18 @@ public class ImageFileService {
             imageFileRequestDto.setOriginalFileName(originalFileName);
             imageFileRequestDto.setConvertedFileName(convertedFileName);
             imageFileRequestDto.setFilePath(String.valueOf(filePath));
-            imageFileRequestDto.setFileSize(multipartFile.getSize());
+            try{
+                imageFileRequestDto.setFileSize(multipartFile.getSize());
+            } catch (MaxUploadSizeExceededException ex){
+                throw new FileUploadException(multipartFile.getSize());
+            }
 
             ImageFile challengeImage = imageFileRepository.save(imageFileRequestDto.toEntity(challenge));
-            //ImageFile imageFile = imageFileRepository.save(imageFileRequestDto.toEntity(challenge));
 
             challengeImageList.add(challengeImage);
-            //imageFileList.add(imageFile);
         }
 
         return challengeImageList;
-        //return imageFileList;
 
 
     }
@@ -70,7 +71,11 @@ public class ImageFileService {
         imageFileRequestDto.setOriginalFileName(originalFileName);
         imageFileRequestDto.setConvertedFileName(convertedFileName);
         imageFileRequestDto.setFilePath(String.valueOf(filePath));
-        imageFileRequestDto.setFileSize(multipartFile.getSize());
+        try{
+            imageFileRequestDto.setFileSize(multipartFile.getSize());
+        } catch (MaxUploadSizeExceededException ex){
+            throw new FileUploadException(multipartFile.getSize());
+        }
 
         ImageFile challengeImage = imageFileRepository.save(imageFileRequestDto.toEntity(challenge));
 
@@ -90,7 +95,7 @@ public class ImageFileService {
         imageFileRequestDto.setFilePath(String.valueOf(filePath));
         try{
             imageFileRequestDto.setFileSize(multipartFile.getSize());
-        } catch (MaxUploadSizeExceededException ex){ //FileSizeLimitExceededException ex){
+        } catch (MaxUploadSizeExceededException ex){
             throw new FileUploadException(multipartFile.getSize());
         }
 
@@ -105,45 +110,5 @@ public class ImageFileService {
 
 
         return imageFile;
-    }
-
-
-    public ImageFile upload(ImageFile imageFileInput, Challenge challenge) throws IOException {
-        String originalFileName = imageFileInput.getOriginalFilename();
-        String convertedFileName = UUID.randomUUID() + originalFileName;
-        String filePath = s3Uploader.upload(imageFileInput, convertedFileName);
-
-        ImageFileRequestDto imageFileRequestDto = new ImageFileRequestDto();
-        imageFileRequestDto.setOriginalFileName(originalFileName);
-        imageFileRequestDto.setConvertedFileName(convertedFileName);
-        imageFileRequestDto.setFilePath(String.valueOf(filePath));
-        imageFileRequestDto.setFileSize(imageFileInput.getSize());
-
-        ImageFile challengeImage = imageFileRepository.save(imageFileRequestDto.toEntity(challenge));
-
-        return challengeImage;
-
-    }
-
-
-    public List<ImageFile> modifyImage(List<MultipartFile> multipartFileList, Challenge challenge) throws IOException {
-        List<ImageFile> imageFileList = new ArrayList<>();
-        for (MultipartFile multipartFile : multipartFileList) {
-            String originalFileName = multipartFile.getOriginalFilename();
-            String convertedFileName = UUID.randomUUID() + originalFileName;
-            String filePath = s3Uploader.upload(multipartFile, convertedFileName);
-
-            ImageFileRequestDto imageFileRequestDto = new ImageFileRequestDto();
-            imageFileRequestDto.setOriginalFileName(originalFileName);
-            imageFileRequestDto.setConvertedFileName(convertedFileName);
-            imageFileRequestDto.setFilePath(String.valueOf(filePath));
-            imageFileRequestDto.setFileSize(multipartFile.getSize());
-
-            ImageFile imageFile = imageFileRepository.save(imageFileRequestDto.toEntity(challenge));
-
-            imageFileList.add(imageFile);
-        }
-
-        return imageFileList;
     }
 }

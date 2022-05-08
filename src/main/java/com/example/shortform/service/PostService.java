@@ -68,32 +68,27 @@ public class PostService {
     public ResponseEntity<PostWriteResponseDto> writePost(Long challengeId,
                                        PostRequestDto requestDto,
                                        MultipartFile multipartFile,
-                                       PrincipalDetails principalDetails) throws IOException, ParseException {
+                                       PrincipalDetails principalDetails) throws IOException {
 
         Challenge challenge = challengeRepository.findById(challengeId).orElseThrow(
                 () -> new NotFoundException("챌린지가 존재하지 않습니다.")
         );
 
-        // TODO 멤버 아닌경우 인증게시글 못올리도록 수정
         UserChallenge userChallenge = userChallengeRepository.findByUserIdAndChallengeId(principalDetails.getUser().getId(), challengeId);
         if(!challenge.getMemberList().contains(userChallenge)){
             throw new ForbiddenException("챌린지에 가입한 사람만 작성할 수 있습니다.");
         }
 
-        //Write a Post per a day
         LocalDate now = LocalDate.now();
         LocalDateTime today = LocalDateTime.of(now.getYear(), now.getMonth(), now.getDayOfMonth(), 0, 0, 0);
 
         if(!postRepository.existsByUserAndChallengeIdAndCreatedAtBetween(principalDetails.getUser(), challengeId, today, today.plusDays(1))){
-            // 해당 게시글에 인증하면 당일 인증여부 체크
             userChallenge.setDailyAuthenticated(true);
             userChallenge.setAuthCount(userChallenge.getAuthCount() + 1);
         } else {
             throw new InvalidException("인증은 하루에 1회만 가능합니다.");
         }
 
-        // update percentage of report - plus authmember
-        // 리포트 퍼센테이지 업데이트 - 인증 멤버 ++
         AuthChallenge authChallenge = authChallengeRepository.findByChallengeAndDate(challenge, now);
         authChallenge.setAuthMember(authChallenge.getAuthMember()+1);
         authChallengeRepository.save(authChallenge);
@@ -105,30 +100,13 @@ public class PostService {
         User user = userRepository.findByEmail(principalDetails.getUsername()).orElseThrow(()-> new NotFoundException("존재하지 않는 사용자입니다"));
         user.setRankingPoint(user.getRankingPoint()+1);
 
-        // level
         boolean isLevelUp = levelService.checkLevelPoint(user);
 
-        // 인증 게시글 작성 후 point 증가 알림
-        Notice notice = Notice.builder()
-                .noticeType(Notice.NoticeType.WRITE)
-                .is_read(false)
-                .user(user)
-                .challengeId(challenge.getId())
-                .roomId(challenge.getChatRoom().getId())
-                .increasePoint(1)
-                .postId(post.getId())
-                .build();
-
+        Notice notice = new Notice(user, challenge, post, 1);
         noticeRepository.save(notice);
 
-        // 챌린지 종료 날 인증 시 다른 챌린지 추천
         if (challenge.getEndDate().equals(today.format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss")))) {
-            Notice recommendNotice = Notice.builder()
-                    .noticeType(Notice.NoticeType.RECOMMEND)
-                    .is_read(false)
-                    .user(user)
-                    .build();
-
+            Notice recommendNotice = new Notice(user);
             noticeRepository.save(recommendNotice);
         }
 
@@ -157,7 +135,6 @@ public class PostService {
         User user = userRepository.findByEmail(principalDetails.getUsername()).orElseThrow(()-> new NotFoundException("존재하지 않는 사용자입니다"));
         user.setRankingPoint(user.getRankingPoint()-1);
 
-        // 레벨업, 다운 로직
         levelService.checkLevelPoint(user);
 
         if (noticeRepository.existsByPostIdAndUserId(postId, user.getId())) {
@@ -166,25 +143,18 @@ public class PostService {
         }
 
         postRepository.deleteById(postId);
-        // // 해당 게시글에 인증삭제하면 당일 인증여부 체크
         UserChallenge userChallenge = userChallengeRepository.findByUserIdAndChallengeId(principalDetails.getUser().getId(), post.getChallenge().getId());
 
         LocalDate now = LocalDate.now();
 
-        // 과거 인증 게시글 삭제할 경우 dailyAuthenticated는 그대로
         if (now.isEqual(post.getCreatedAt().toLocalDate()))
             userChallenge.setDailyAuthenticated(false);
 
         userChallenge.setAuthCount(userChallenge.getAuthCount() - 1);
 
-        //for Report, 퍼센테이지 업데이트====================================================
-
         AuthChallenge authChallenge = authChallengeRepository.findByChallengeAndDate(userChallenge.getChallenge(), post.getCreatedAt().toLocalDate());
         authChallenge.setAuthMember(authChallenge.getAuthMember()-1);
         authChallengeRepository.save(authChallenge);
-
-        //============================================================================
-
 
     }
 
@@ -211,43 +181,24 @@ public class PostService {
 
     @Transactional
     public ResponseEntity<PostPageResponseDto> getListPost(Long challengeId, Pageable postPageable, Pageable commentPageable) {
-        Challenge challenge = challengeRepository.findById(challengeId).orElseThrow(
+        Challenge challenge = challengeRepository.findCheckChallenge(challengeId).orElseThrow(
                 () -> new NotFoundException("챌린지가 존재하지 않습니다.")
         );
 
-//        List<Post> postList = postRepository.findAllByChallengeIdOrderByCreatedAtDesc(challengeId);
-        // DB에서 챌린지의 모든 인증게시글 조회
         Page<Post> postPage = postRepository.findAllByChallengeId(challengeId, postPageable);
         List<PostResponseDto> responseDtoList = new ArrayList<>();
 
-
         for (Post post : postPage) {
             List<CommentResponseDto> commentDetailList = new ArrayList<>();
-//            List<Comment> commentList = commentRepository.findAllByPostIdOrderByCreatedAtDesc(post.getId());
-            // DB에서 인증 게시글의 모든 댓글 조회
             Page<Comment> commentPage = commentRepository.findAllByPostId(post.getId(), commentPageable);
             for (Comment comment : commentPage) {
-                // 댓글 날짜 형식 변경
                 CommentResponseDto commentDetailResponseDto = comment.toResponse();
                 String commentCreatedAt = comment.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss"));
-//                String commentCreatedAt = comment.getCreatedAt().toString();
-//                String year = commentCreatedAt.substring(0,4) + ".";
-//                String month = commentCreatedAt.substring(5,7) + ".";
-//                String day = commentCreatedAt.substring(8,10) + " ";
-//                String time = commentCreatedAt.substring(11,19);
-//                commentCreatedAt = year + month + day + time;
                 commentDetailResponseDto.setCreatedAt(commentCreatedAt);
                 commentDetailList.add(commentDetailResponseDto);
             }
-            // 인증 게시글 날짜 형식 변경
             PostResponseDto postResponseDto = post.toResponse(commentDetailList, commentPage.getTotalElements());
             String postCreatedAt = post.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss"));
-//            String postCreatedAt = post.getCreatedAt().toString();
-//            String year = postCreatedAt.substring(0,4) + ".";
-//            String month = postCreatedAt.substring(5,7) + ".";
-//            String day = postCreatedAt.substring(8,10) + " ";
-//            String time = postCreatedAt.substring(11,19);
-//            postCreatedAt = year + month + day + time;
             postResponseDto.setCreatedAt(postCreatedAt);
             responseDtoList.add(postResponseDto);
         }
@@ -260,15 +211,14 @@ public class PostService {
     }
 
     public ResponseEntity<PostDetailPageResponseDto> getPost(Long challengeId, Long postId, Pageable pageable) {
-        Post post = postRepository.findById(postId).orElseThrow(
+        Post post = postRepository.findPost(postId).orElseThrow(
                 () -> new NotFoundException("인증 게시글이 존재하지 않습니다.")
         );
 
-        Page<Comment> commentPage = commentRepository.findAllByPostId(pageable, postId);
+        Page<Comment> commentPage = commentRepository.findAllComment(pageable, postId);
         List<CommentResponseDto> commentDetailList = new ArrayList<>();
 
         for (Comment comment : commentPage) {
-            // 댓글 날짜 형식 변경
             CommentResponseDto commentDetailResponseDto = comment.toResponse();
             String commentCreatedAt = comment.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy.MM.dd HH:mm:ss"));
             commentDetailResponseDto.setCreatedAt(commentCreatedAt);
